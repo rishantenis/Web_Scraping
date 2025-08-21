@@ -1,0 +1,109 @@
+Ebook Scarping 
+
+import os
+import re
+import time
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+
+# ---------- CONFIG ----------
+BASE_LIST_URL = "https://......./book/page/{}/"
+START_PAGE = 1
+MAX_PAGES = 50   # adjust depending on how many directory pages exist
+DOWNLOAD_DIR = "books"
+
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/115.0 Safari/537.36"
+}
+
+# ---------- SELENIUM SETUP ----------
+options = webdriver.ChromeOptions()
+options.add_argument("--headless")  
+options.add_argument("--disable-blink-features=AutomationControlled")
+driver = webdriver.Chrome(service=Service(), options=options)
+
+# ---------- FUNCTIONS ----------
+def sanitize_filename(name):
+    """Remove invalid characters for Windows filenames"""
+    return re.sub(r'[\\/*?:"<>|]', "_", name)
+
+def download_file(file_url, filename):
+    """Download file from direct link and save with given filename"""
+    try:
+        print(f"Downloading: {file_url}")
+        r = requests.get(file_url, headers=HEADERS, stream=True)
+        r.raise_for_status()
+        with open(filename, "wb") as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+        print(f"✅ Saved -> {filename}")
+    except Exception as e:
+        print(f"❌ Download failed: {file_url} | Error: {e}")
+
+def scrape_book_page(book_url):
+    """Open a single book page and download its file"""
+    try:
+        driver.get(book_url)
+        time.sleep(2)
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+
+        # get book title
+        title_tag = soup.find("h1")
+        if title_tag:
+            book_title = title_tag.get_text(strip=True)
+        else:
+            book_title = "untitled_book"
+        
+        safe_title = sanitize_filename(book_title) + ".pdf"
+        filename = os.path.join(DOWNLOAD_DIR, safe_title)
+
+        # look for download link
+        dl_btn = soup.find("a", href=True, string=lambda s: s and "download" in s.lower())
+        if not dl_btn:
+            dl_btn = soup.find("a", href=lambda h: h and "jet_download" in h)
+
+        if dl_btn:
+            file_url = urljoin(book_url, dl_btn['href'])
+            download_file(file_url, filename)
+        else:
+            print(f"⚠️ No download link found on {book_url}")
+    except Exception as e:
+        print(f"❌ Error scraping {book_url}: {e}")
+
+def scrape_directory_page(page_url):
+    """Scrape one directory page (list of books)"""
+    driver.get(page_url)
+    time.sleep(2)
+    soup = BeautifulSoup(driver.page_source, "html.parser")
+
+    # grab all book block links
+    book_links = [a['href'] for a in soup.find_all("a", href=True) if "/book/" in a['href']]
+    book_links = list(set(book_links))  # remove duplicates
+
+    for book_url in book_links:
+        scrape_book_page(book_url)
+
+# ---------- RUN ----------
+for i in range(START_PAGE, MAX_PAGES + 1):
+    if i == 1:
+        url = "https://fun4yo.xyz/book/"
+    else:
+        url = BASE_LIST_URL.format(i)
+
+    print(f"\n=== Scraping directory page {i} -> {url} ===")
+    try:
+        scrape_directory_page(url)
+    except Exception as e:
+        print(f"Stopping at page {i}, error: {e}")
+        break
+
+driver.quit()
+print("\n🎉 Finished scraping all pages.")
