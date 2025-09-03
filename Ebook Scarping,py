@@ -11,7 +11,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 
 # ---------- CONFIG ----------
-BASE_LIST_URL = "https://......./book/page/{}/"
+BASE_LIST_URL = "https://....../book/page/{}/"
 START_PAGE = 1
 MAX_PAGES = 50   # adjust depending on how many directory pages exist
 DOWNLOAD_DIR = "books"
